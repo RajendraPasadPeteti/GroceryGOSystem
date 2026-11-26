@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>GroceryGo - Shop Fresh Groceries</title>
+    <link rel="stylesheet" href="../style.css">
+</head>
+
+<body>
+
+<!-- ================= NAVBAR ================= -->
+<header class="navbar">
+    <div class="logo">
+        🛒 <span>GroceryGo</span>
+    </div>
+
+    <div class="nav-actions">
+        <a href="dashboard.html" class="login-link active">Shop</a>
+        <a href="orders.html" class="login-link">My Orders</a>
+        <a href="cart.html" class="cart-button">
+            🛒 Cart
+            <span id="cartCount">0</span>
+        </a>
+        <a href="support.html" class="login-link">🎧 Support</a>
+        <a href="profile.html" class="login-link">👤 Profile</a>
+        <button type="button" onclick="logout()" class="register-link plain">
+            Logout
+        </button>
+    </div>
+</header>
+
+<main class="user-page">
+
+    <!-- WELCOME BANNER -->
+    <section class="user-welcome">
+        <div>
+            <h1 id="welcomeText">Welcome!</h1>
+            <p>Fresh groceries, fruits, vegetables, and everyday essentials delivered to your doorstep.</p>
+        </div>
+
+        <div class="user-tools">
+            <a class="user-tool-link" href="orders.html">📦 Track Orders</a>
+            <a class="user-tool-link primary" href="cart.html">View Cart →</a>
+        </div>
+    </section>
+
+    <!-- SEARCH BAR -->
+    <div class="search-box full-width">
+        <span>🔍</span>
+        <input type="text" id="searchInput" placeholder="Search by grocery name, category, or keyword...">
+    </div>
+
+    <!-- CATEGORY FILTER CHIPS -->
+    <div class="filter-row" id="categoryFilters">
+        <!-- Rendered dynamically -->
+    </div>
+
+    <!-- RESULTS HEADER -->
+    <div class="results-line">
+        <h2 id="sectionTitle">All Products</h2>
+        <p id="productCount">0 products available</p>
+    </div>
+
+    <!-- PRODUCT GRID -->
+    <div id="productContainer" class="product-grid">
+        <!-- Products inserted dynamically -->
+    </div>
+
+    <!-- EMPTY STATE -->
+    <div id="noProducts" class="no-products">
+        <div class="icon">🔎</div>
+        <h3>No products found</h3>
+        <p>We couldn't find anything matching your search or selected filter.</p>
+        <button onclick="resetFilters()" class="primary-btn">Clear Search & Show All</button>
+    </div>
+
+</main>
+
+<!-- PRODUCT DETAILS MODAL -->
+<div id="productModal" class="modal-overlay" onclick="closeModal(event)">
+    <div class="modal-card" onclick="event.stopPropagation()">
+        <div class="modal-header">
+            <span id="modalIcon">🍎</span>
+            <button class="modal-close" onclick="closeModal()">✕</button>
+        </div>
+        <div class="modal-body">
+            <h2 id="modalName">Product Name</h2>
+            <p class="meta" id="modalMeta">Category • Unit</p>
+            <p class="desc" id="modalDesc">Detailed description of the product.</p>
+            <div class="modal-footer">
+                <div>
+                    <span class="price-label">Price</span>
+                    <strong id="modalPrice" class="price-value">₹0</strong>
+                </div>
+                <button id="modalAddBtn" class="primary-btn">Add to Cart</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TOAST -->
+<div id="toast" class="toast"></div>
+
+<!-- SCRIPTS -->
+<script src="../store.js"></script>
+<script src="../auth.js"></script>
+
+<script>
+(function () {
+    // 1. Guard Page
+    const user = window.GroceryAuth.protectPage("user");
+    if (!user) return;
+
+    // 2. Personalize
+    document.getElementById("welcomeText").textContent = `Hello, ${user.name} 👋`;
+
+    let selectedCategory = "All";
+    let searchKeyword = "";
+
+    const container = document.getElementById("productContainer");
+    const noProducts = document.getElementById("noProducts");
+    const searchInput = document.getElementById("searchInput");
+    const productCount = document.getElementById("productCount");
+    const sectionTitle = document.getElementById("sectionTitle");
+    const categoryFiltersContainer = document.getElementById("categoryFilters");
+    const toast = document.getElementById("toast");
+
+    // 3. Render Category Filter Chips
+    function renderCategories() {
+        const categories = window.GroceryStore.getCategories().filter(c => c.active !== false);
+        categoryFiltersContainer.innerHTML = `
+            <button class="category-filter active" data-category="All">All Items</button>
+        `;
+
+        categories.forEach(cat => {
+            const btn = document.createElement("button");
+            btn.className = "category-filter";
+            btn.dataset.category = cat.name;
+            btn.textContent = `${cat.icon} ${cat.name}`;
+            categoryFiltersContainer.appendChild(btn);
+        });
+
+        // Add Click Handlers
+        categoryFiltersContainer.querySelectorAll(".category-filter").forEach(button => {
+            button.addEventListener("click", () => {
+                selectedCategory = button.dataset.category;
+                categoryFiltersContainer.querySelectorAll(".category-filter").forEach(b => b.classList.remove("active"));
+                button.classList.add("active");
+                sectionTitle.textContent = selectedCategory === "All" ? "All Products" : `${selectedCategory} Collection`;
+                applyFilters();
+            });
+        });
+    }
+
+    // 4. Update Cart Count in Navbar
+    function updateCartCount() {
+        const count = window.GroceryStore.getCartCount();
+        document.getElementById("cartCount").textContent = count;
+    }
+
+    // 5. Toast Notification
+    function showToast(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(window.__toastTimer);
+        window.__toastTimer = setTimeout(() => toast.classList.remove("show"), 1800);
+    }
+
+    // 6. Display Products
+    function displayProducts(list) {
+        container.innerHTML = "";
+        productCount.textContent = `${list.length} product${list.length === 1 ? "" : "s"} available`;
+
+        if (list.length === 0) {
+            noProducts.style.display = "block";
+            return;
+        }
+
+        noProducts.style.display = "none";
+
+        list.forEach(product => {
+            const card = document.createElement("div");
+            card.className = "product-card";
+
+            let stockTagClass = "in-stock";
+            let stockTagText = "In Stock";
+            let isOutOfStock = false;
+
+            if (product.stock <= 0 || !product.available) {
+                stockTagClass = "out-stock";
+                stockTagText = "Out of Stock";
+                isOutOfStock = true;
+            } else if (product.stock <= 10) {
+                stockTagClass = "low-stock";
+                stockTagText = `Only ${product.stock} left`;
+            }
+
+            card.innerHTML = `
+                <div class="product-image" onclick="window.openProductModal(${product.id})">
+                    <span class="stock-tag ${stockTagClass}">${stockTagText}</span>
+                    ${product.icon}
+                </div>
+                <div class="product-info">
+                    <h3 onclick="window.openProductModal(${product.id})">${product.name}</h3>
+                    <p class="product-category">${product.category} • ${product.unit}</p>
+                    <p class="product-desc">${product.description || ""}</p>
+                    <div class="product-bottom">
+                        <span class="product-price">₹${product.price}</span>
+                        <button class="add-btn" type="button" ${isOutOfStock ? "disabled" : ""} onclick="window.handleAddToCart(${product.id})">
+                            ${isOutOfStock ? "Unavailable" : "ADD +"}
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            container.appendChild(card);
+        });
+    }
+
+    // 7. Filter Products
+    function applyFilters() {
+        const allProducts = window.GroceryStore.getProducts().filter(p => p.available !== false);
+
+        const filtered = allProducts.filter(product => {
+            const matchesCategory = (selectedCategory === "All") || (product.category.toLowerCase() === selectedCategory.toLowerCase());
+            const text = searchKeyword.toLowerCase();
+            const matchesSearch = !text ||
+                product.name.toLowerCase().includes(text) ||
+                product.category.toLowerCase().includes(text) ||
+                (product.description && product.description.toLowerCase().includes(text));
+
+            return matchesCategory && matchesSearch;
+        });
+
+        displayProducts(filtered);
+    }
+
+    // 8. Add to Cart Handler
+    window.handleAddToCart = function (productId) {
+        const res = window.GroceryStore.addToCart(productId, 1);
+        updateCartCount();
+        showToast(res.message);
+    };
+
+    // 9. Reset Filters
+    window.resetFilters = function () {
+        searchInput.value = "";
+        searchKeyword = "";
+        selectedCategory = "All";
+        sectionTitle.textContent = "All Products";
+        categoryFiltersContainer.querySelectorAll(".category-filter").forEach(b => {
+            b.classList.toggle("active", b.dataset.category === "All");
+        });
+        applyFilters();
+    };
+
+    // 10. Product Modal
+    window.openProductModal = function (productId) {
+        const product = window.GroceryStore.getProductById(productId);
+        if (!product) return;
+
+        document.getElementById("modalIcon").textContent = product.icon;
+        document.getElementById("modalName").textContent = product.name;
+        document.getElementById("modalMeta").textContent = `${product.category} • ${product.unit} (Stock: ${product.stock})`;
+        document.getElementById("modalDesc").textContent = product.description || "Fresh quality product guaranteed by GroceryGo.";
+        document.getElementById("modalPrice").textContent = `₹${product.price}`;
+
+        const addBtn = document.getElementById("modalAddBtn");
+        if (product.stock <= 0 || !product.available) {
+            addBtn.disabled = true;
+            addBtn.textContent = "Out of Stock";
+            addBtn.style.opacity = "0.5";
+            addBtn.style.cursor = "not-allowed";
+        } else {
+            addBtn.disabled = false;
+            addBtn.textContent = "Add to Cart";
+            addBtn.style.opacity = "1";
+            addBtn.style.cursor = "pointer";
+            addBtn.onclick = function () {
+                window.handleAddToCart(product.id);
+                closeModal();
+            };
+        }
+
+        document.getElementById("productModal").style.display = "flex";
+    };
+
+    window.closeModal = function () {
+        document.getElementById("productModal").style.display = "none";
+    };
+
+    // 11. Search Event Listener
+    searchInput.addEventListener("input", function () {
+        searchKeyword = searchInput.value.trim();
+        applyFilters();
+    });
+
+    // 12. Init
+    renderCategories();
+    updateCartCount();
+    applyFilters();
+})();
+</script>
+
+</body>
+</html>
